@@ -300,9 +300,14 @@ body.panel-open #panelHandle { right: var(--side-open-w, calc(var(--side-w) * va
 
 <!-- PDF.js knižnica -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- JavaScript je v Časti 2 -->
+</body>
+</html>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';  
+// PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+// DOM elementy
 const fileInput = document.getElementById('fileInput');
 const exportBtn = document.getElementById('exportBtn');
 const importBtn = document.getElementById('importBtn');
@@ -328,6 +333,7 @@ const sidePanel = document.getElementById('sidePanel');
 const panelHandleBtn = document.getElementById('panelHandle');
 const statusEl = document.getElementById('status');
 
+// Tabuľka zápisov
 const notesTable = document.getElementById('notesTable');
 const tbody = notesTable.querySelector('tbody');
 const addRowBtn = document.getElementById('addRow');
@@ -337,6 +343,7 @@ const downloadCsvBtn = document.getElementById('downloadCsv');
 const cols = ['Číslo','Téma','Zodpovedný','Termín','Úspora','Projekt','Status'];
 let rows = [];
 
+// PDF stav
 let pdfDoc = null;
 let currentPage = 1;
 let scale = 1.0;
@@ -349,19 +356,21 @@ let addMarkerOn = false;
 const ZOOM_STEP = 1.25;
 const FOCUS_SCALE = 2.0;
 
+// ---- Ukladanie PDF: window.name + sessionStorage + localStorage + IndexedDB ----
 const PDF_DB_NAME = 'vsmPdfDB';
 const PDF_STORE = 'lastPdf';
 const PDF_STATE_KEY = 'vsmPdfState';
 
+// window.name payload
 const WINDOW_NAME_KEY = 'VSM_PDF_CACHE';
 
+// sessionStorage
 const PDF_SESS_DATAURL_KEY = 'vsmPdfDataUrlSess';
 const PDF_SESS_NAME_KEY = 'vsmPdfNameSess';
 
+// localStorage (fallback pre menšie PDF)
 const PDF_DATAURL_KEY = 'vsmPdfDataUrl';
 const PDF_NAME_KEY = 'vsmPdfName';
-
-const MARKERS_KEY = 'visioMarkers';
 
 function openPdfDb() {
   return new Promise((resolve, reject) => {
@@ -382,6 +391,7 @@ async function blobToDataUrl(blob) {
   });
 }
 
+// Bezpečné dekódovanie Data URL bez fetch (Edge + file://)
 function dataUrlToArrayBuffer(dataUrl) {
   try {
     const comma = dataUrl.indexOf(',');
@@ -413,7 +423,6 @@ function saveToWindowName(dataUrl, name) {
     console.warn('Ukladanie do window.name zlyhalo:', e);
   }
 }
-
 function readFromWindowName() {
   try {
     if (!window.name) return null;
@@ -431,6 +440,7 @@ function readFromWindowName() {
 async function saveLastPdf(arrayBuffer, name) {
   const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
 
+  // 1) window.name (istota pri refreshi v tom istom tabu)
   try {
     const dataUrl = await blobToDataUrl(blob);
     saveToWindowName(dataUrl, name);
@@ -438,6 +448,7 @@ async function saveLastPdf(arrayBuffer, name) {
     console.warn('Ukladanie do window.name zlyhalo:', e);
   }
 
+  // 2) sessionStorage (tiež prežije refresh v tom istom tabu)
   try {
     const dataUrl = await blobToDataUrl(blob);
     sessionStorage.setItem(PDF_SESS_DATAURL_KEY, dataUrl);
@@ -446,6 +457,7 @@ async function saveLastPdf(arrayBuffer, name) {
     console.warn('Ukladanie do sessionStorage zlyhalo:', e);
   }
 
+  // 3) localStorage (ak sa zmestí ~5MB)
   try {
     const dataUrl = await blobToDataUrl(blob);
     if (dataUrl.length <= 4_800_000) {
@@ -458,6 +470,7 @@ async function saveLastPdf(arrayBuffer, name) {
     console.warn('Ukladanie do localStorage zlyhalo:', e);
   }
 
+  // 4) IndexedDB (dlhšia perzistencia – file:// ju nie vždy povolí)
   try {
     const db = await openPdfDb();
     await new Promise((resolve, reject) => {
@@ -472,9 +485,11 @@ async function saveLastPdf(arrayBuffer, name) {
 }
 
 async function loadLastPdfRecord() {
+  // 1) window.name – najspoľahlivejšie pri refreshi
   const wn = readFromWindowName();
   if (wn) return wn;
 
+  // 2) sessionStorage
   try {
     const sUrl = sessionStorage.getItem(PDF_SESS_DATAURL_KEY);
     if (sUrl) {
@@ -483,6 +498,7 @@ async function loadLastPdfRecord() {
     }
   } catch (e) { console.warn('Čítanie zo sessionStorage zlyhalo:', e); }
 
+  // 3) localStorage – ak sa zmestilo
   try {
     const lUrl = localStorage.getItem(PDF_DATAURL_KEY);
     if (lUrl) {
@@ -491,6 +507,7 @@ async function loadLastPdfRecord() {
     }
   } catch (e) { console.warn('Čítanie z localStorage zlyhalo:', e); }
 
+  // 4) IndexedDB – ak je dostupné na danom pôvode
   try {
     const db = await openPdfDb();
     const rec = await new Promise((resolve, reject) => {
@@ -518,6 +535,7 @@ function loadPdfState() {
   try { return JSON.parse(localStorage.getItem(PDF_STATE_KEY) || '{}'); } catch { return {}; }
 }
 
+// ---- Zápisník (rows) ----
 function loadRows() {
   try { const raw = localStorage.getItem('visioNotesRows'); rows = raw ? JSON.parse(raw) : []; }
   catch { rows = []; }
@@ -551,6 +569,7 @@ function renderRows() {
 
     const tdAct = document.createElement('td'); tdAct.className = 'actions'; tdAct.contentEditable = 'false';
 
+    // Oko (zobraziť na mape)
     const viewBtn = document.createElement('button');
     viewBtn.className = 'iconBtn view';
     viewBtn.title = 'Zobraziť číslo na mape';
@@ -566,11 +585,9 @@ function renderRows() {
     });
     tdAct.appendChild(viewBtn);
 
-    const delBtn = document.createElement('button'); 
-    delBtn.className = 'iconBtn delete';
-    delBtn.title = 'Odstrániť riadok'; 
-    delBtn.setAttribute('aria-label','Odstrániť riadok'); 
-    delBtn.textContent = '✖';
+    // Krížik (zmazať riadok)
+    const delBtn = document.createElement('button'); delBtn.className = 'iconBtn delete';
+    delBtn.title = 'Odstrániť riadok'; delBtn.setAttribute('aria-label','Odstrániť riadok'); delBtn.textContent = '✖';
     delBtn.addEventListener('click', () => {
       const num = parseInt(rows[i]['Číslo'], 10);
       rows.splice(i, 1); sortRowsInPlace(); saveRows(); renderRows();
@@ -585,157 +602,75 @@ function renderRows() {
 function addEmptyRow() { const r = {}; cols.forEach(k => r[k]=''); rows.push(r); sortRowsInPlace(); saveRows(); renderRows(); tbody.lastElementChild?.firstElementChild?.focus(); }
 function addRowWithNumber(num) { const r = {}; cols.forEach(k => r[k]=''); r['Číslo']=String(num); rows.push(r); sortRowsInPlace(); saveRows(); renderRows(); selectRowByNumber(num); }
 
+// Klik na riadok: iba selektuje riadok, nescrolluje mapu
 tbody.addEventListener('click', (e) => {
   const tr = e.target.closest('tr'); if (!tr || e.target.closest('button')) return;
   tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected')); tr.classList.add('selected');
+  // zámerne nevoláme focusMarkerByNumber – presun robí len ikona „oko“
 });
 
 function selectRowByNumber(num) {
-  const i = rows.findIndex(r => parseInt(r['Číslo'],10) === num);
-  if (i >= 0) {
-    const tr = tbody.children[i];
-    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
-    tr?.classList.add('selected');
-    tr?.scrollIntoView({ block: 'nearest' });
-  }
+  const i = rows.findIndex(r => parseInt(r['Číslo'],10)===num);
+  if (i>=0) { const tr = tbody.children[i]; tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected')); tr?.classList.add('selected'); tr?.scrollIntoView({block:'nearest'}); }
 }
 addRowBtn.addEventListener('click', addEmptyRow);
 clearRowsBtn.addEventListener('click', () => {
   if (!confirm('Naozaj vyčistiť všetky riadky (a markery)?')) return;
-  rows = [];
-  saveRows();
-  renderRows();
-  markers = [];
-  saveMarkers();
-  renderMarkers();
+  rows = []; saveRows(); renderRows(); markers = []; saveMarkers(); renderMarkers();
 });
 downloadCsvBtn.addEventListener('click', () => {
   sortRowsInPlace();
   const csvHeader = [...cols, 'Akcie'].join(';');
-  const csvRows = rows.map(r =>
-    cols.map(k => (r[k] ?? '').replace(/;/g, ',')).join(';')
-  );
+  const csvRows = rows.map(r => cols.map(k => (r[k] ?? '').replace(/;/g, ',')).join(';'));
   const csvStr = [csvHeader, ...csvRows].join('\n');
   const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'zapisnik.csv';
-  a.click();
-  URL.revokeObjectURL(url);
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'zapisnik.csv'; a.click(); URL.revokeObjectURL(url);
 });
 
-// Marker handling
+// ---- Markery ----
 let markers = [];
-function loadMarkers() {
-  try {
-    const raw = localStorage.getItem(MARKERS_KEY);
-    markers = raw ? JSON.parse(raw) : [];
-  } catch {
-    markers = [];
-  }
-}
-function saveMarkers() {
-  localStorage.setItem(MARKERS_KEY, JSON.stringify(markers));
-}
+const MARKERS_KEY = 'visioMarkers';
+function loadMarkers() { try { const raw = localStorage.getItem(MARKERS_KEY); markers = raw ? JSON.parse(raw) : []; } catch { markers = []; } }
+function saveMarkers() { localStorage.setItem(MARKERS_KEY, JSON.stringify(markers)); }
 function renderMarkers() {
-  markerLayer.innerHTML = '';
-  markerLayer.style.width = canvas.width + 'px';
-  markerLayer.style.height = canvas.height + 'px';
-  markers.filter(m => m.page === currentPage).forEach(m => {
-    const el = document.createElement('div');
-    el.className = 'marker';
-    el.dataset.number = String(m.number);
-    el.textContent = m.number;
-    el.style.left = (m.xNorm * canvas.width) + 'px';
-    el.style.top = (m.yNorm * canvas.height) + 'px';
-    el.addEventListener('click', () => {
-      selectRowByNumber(m.number);
-      setPanelOpen(true);
-      el.classList.add('pulse');
-      setTimeout(() => el.classList.remove('pulse'), 1200);
-    });
+  markerLayer.innerHTML = ''; markerLayer.style.width = canvas.width + 'px'; markerLayer.style.height = canvas.height + 'px';
+  markers.filter(m => m.page===currentPage).forEach(m => {
+    const el = document.createElement('div'); el.className='marker'; el.dataset.number=String(m.number); el.textContent=m.number;
+    el.style.left = (m.xNorm*canvas.width)+'px'; el.style.top = (m.yNorm*canvas.height)+'px';
+    el.addEventListener('click', () => { selectRowByNumber(m.number); setPanelOpen(true); el.classList.add('pulse'); setTimeout(()=>el.classList.remove('pulse'),1200); });
     markerLayer.appendChild(el);
   });
 }
 function getNextNumber() {
   const used = new Set();
-  markers.forEach(m => {
-    const n = parseInt(m.number, 10);
-    if (Number.isInteger(n) && n > 0) used.add(n);
-  });
-  rows.forEach(r => {
-    const n = parseInt(r['Číslo'], 10);
-    if (Number.isInteger(n) && n > 0) used.add(n);
-  });
-  let i = 1;
-  while (used.has(i)) i++;
-  return i;
+  markers.forEach(m => { const n = parseInt(m.number,10); if (Number.isInteger(n) && n>0) used.add(n); });
+  rows.forEach(r => { const n = parseInt(r['Číslo'],10); if (Number.isInteger(n) && n>0) used.add(n); });
+  let i=1; while(used.has(i)) i++; return i;
 }
-function removeMarkerByNumber(num) {
-  const before = markers.length;
-  markers = markers.filter(m => m.number !== num);
-  if (markers.length !== before) {
-    saveMarkers();
-    renderMarkers();
-  }
-}
+function removeMarkerByNumber(num) { const before = markers.length; markers = markers.filter(m => m.number!==num); if (markers.length!==before) { saveMarkers(); renderMarkers(); } }
 function placeMarkerAtEvent(e) {
-  if (e.button !== 0) return;
-  const rect = canvas.getBoundingClientRect();
-  const xPx = e.clientX - rect.left;
-  const yPx = e.clientY - rect.top;
-  const xNorm = xPx / canvas.width;
-  const yNorm = yPx / canvas.height;
-  const num = getNextNumber();
-  markers.push({ number: num, page: currentPage, xNorm, yNorm });
-  saveMarkers();
-  renderMarkers();
-  addRowWithNumber(num);
-  const mEl = markerLayer.querySelector(`.marker[data-number="${num}"]`);
-  mEl?.classList.add('pulse');
-  setTimeout(() => mEl?.classList.remove('pulse'), 1200);
+  if (e.button!==0) return;
+  const rect = canvas.getBoundingClientRect(); const xPx=e.clientX-rect.left; const yPx=e.clientY-rect.top;
+  const xNorm = xPx/canvas.width, yNorm = yPx/canvas.height; const num = getNextNumber();
+  markers.push({ number:num, page:currentPage, xNorm, yNorm }); saveMarkers(); renderMarkers(); addRowWithNumber(num);
+  const mEl = markerLayer.querySelector(`.marker[data-number="${num}"]`); mEl?.classList.add('pulse'); setTimeout(()=>mEl?.classList.remove('pulse'),1200);
   statusEl.textContent = 'Pridané číslo ' + num + ' na stranu ' + currentPage;
 }
 async function focusMarkerByNumber(num) {
-  const m = markers.find(x => x.number === num);
-  if (!m) {
-    statusEl.textContent = 'K riadku nie je priradený marker (číslo: ' + num + ').';
-    return;
-  }
-  if (currentPage !== m.page) {
-    currentPage = m.page;
-    fitMode = null;
-    await renderPage();
-  }
-  fitMode = null;
-  if (scale < FOCUS_SCALE) scale = FOCUS_SCALE;
-  await renderPage();
-  const x = m.xNorm * canvas.width,
-    y = m.yNorm * canvas.height;
-  viewer.scrollLeft = Math.max(
-    0,
-    Math.min(
-      x - viewer.clientWidth / 2,
-      Math.max(0, viewer.scrollWidth - viewer.clientWidth)
-    )
-  );
-  viewer.scrollTop = Math.max(
-    0,
-    Math.min(
-      y - viewer.clientHeight / 2,
-      Math.max(0, viewer.scrollHeight - viewer.clientHeight)
-    )
-  );
-  const mEl = markerLayer.querySelector(`.marker[data-number="${num}"]`);
-  mEl?.classList.add('pulse');
-  setTimeout(() => mEl?.classList.remove('pulse'), 1200);
+  const m = markers.find(x => x.number===num);
+  if (!m) { statusEl.textContent = 'K riadku nie je priradený marker (číslo: '+num+').'; return; }
+  if (currentPage !== m.page) { currentPage = m.page; fitMode=null; await renderPage(); }
+  fitMode=null; if (scale<FOCUS_SCALE) scale=FOCUS_SCALE; await renderPage();
+  const x = m.xNorm*canvas.width, y = m.yNorm*canvas.height;
+  viewer.scrollLeft = Math.max(0, Math.min(x - viewer.clientWidth/2, Math.max(0, viewer.scrollWidth - viewer.clientWidth)));
+  viewer.scrollTop = Math.max(0, Math.min(y - viewer.clientHeight/2, Math.max(0, viewer.scrollHeight - viewer.clientHeight)));
+  const mEl = markerLayer.querySelector(`.marker[data-number="${num}"]`); mEl?.classList.add('pulse'); setTimeout(()=>mEl?.classList.remove('pulse'),1200);
 }
 
-// Viewer
-fileInput.addEventListener('change', async e => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+// ---- Viewer ----
+// Načítanie cez tlačidlo "Vybrať súbor"
+fileInput.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0]; if (!file) return;
   try {
     const ab = await file.arrayBuffer();
     await loadPdf(ab, file.name);
@@ -750,114 +685,202 @@ fileInput.addEventListener('change', async e => {
 });
 
 async function loadPdf(arrayBuffer, name = 'PDF') {
-  clearViewer();
-  statusEl.textContent = 'Načítavam...';
-  try {
-    pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  } catch (err) {
-    statusEl.textContent = 'PDF sa nepodarilo načítať: ' + err.message;
-    console.warn(err);
-    return;
-  }
-  pageCountEl.textContent = pdfDoc.numPages;
-  currentPage = 1;
-  pageNumInput.value = currentPage;
+  clearViewer(); statusEl.textContent = 'Načítavam...';
+  try { pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise; }
+  catch (err) { statusEl.textContent = 'PDF sa nepodarilo načítať: ' + err.message; console.warn(err); return; }
+  pageCountEl.textContent = pdfDoc.numPages; currentPage = 1; pageNumInput.value = currentPage;
   statusEl.textContent = 'Načítané: ' + name + ' • ' + pdfDoc.numPages + ' strán';
-  fitMode = 'window';
-  await renderPage();
-  viewer.scrollLeft = 0;
-  viewer.scrollTop = 0;
-  savePdfState();
+  fitMode = 'window'; await renderPage(); viewer.scrollLeft=0; viewer.scrollTop=0; savePdfState();
 }
 function clearViewer() {
-  pdfDoc = null;
-  currentPage = 1;
-  scale = 1.0;
-  fitMode = 'window';
-  canvas.width = 0;
-  canvas.height = 0;
-  pageCountEl.textContent = '0';
-  pageNumInput.value = 1;
-  markerLayer.innerHTML = '';
+  pdfDoc=null; currentPage=1; scale=1.0; fitMode='window';
+  canvas.width=0; canvas.height=0; pageCountEl.textContent='0'; pageNumInput.value=1; markerLayer.innerHTML='';
 }
-function clampScale(s) {
-  return Math.max(0.2, Math.min(s, 6.0));
-}
+function clampScale(s) { return Math.max(0.2, Math.min(s, 6.0)); }
 async function renderPage() {
   if (!pdfDoc) return;
   const page = await pdfDoc.getPage(currentPage);
-  if (fitMode === 'window') {
-    const baseVp = page.getViewport({ scale: 1.0 });
+  if (fitMode==='window') {
+    const baseVp = page.getViewport({ scale:1.0 });
     const scaleW = viewer.clientWidth / baseVp.width;
     const scaleH = viewer.clientHeight / baseVp.height;
     scale = clampScale(Math.min(scaleW, scaleH));
   }
   const viewport = page.getViewport({ scale });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  canvasWrap.style.width = viewport.width + 'px';
+  canvas.width = viewport.width; canvas.height = viewport.height; canvasWrap.style.width = viewport.width + 'px';
   await page.render({ canvasContext: ctx, viewport }).promise;
-  pageNumInput.value = currentPage;
-  renderMarkers();
-  savePdfState();
+  pageNumInput.value = currentPage; renderMarkers(); savePdfState();
 }
-prevBtn.addEventListener('click', async () => {
-  if (!pdfDoc) return;
-  if (currentPage > 1) {
-    currentPage--;
-    await renderPage();
-    if (fitMode === 'window') {
-      viewer.scrollLeft = 0;
-      viewer.scrollTop = 0;
-    }
-  }
-});
-nextBtn.addEventListener('click', async () => {
-  if (!pdfDoc) return;
-  if (currentPage < pdfDoc.numPages) {
-    currentPage++;
-    await renderPage();
-    if (fitMode === 'window') {
-      viewer.scrollLeft = 0;
-      viewer.scrollTop = 0;
-    }
-  }
-});
+prevBtn.addEventListener('click', async () => { if (!pdfDoc) return; if (currentPage>1){ currentPage--; await renderPage(); if (fitMode==='window'){ viewer.scrollLeft=0; viewer.scrollTop=0; } } });
+nextBtn.addEventListener('click', async () => { if (!pdfDoc) return; if (currentPage<pdfDoc.numPages){ currentPage++; await renderPage(); if (fitMode==='window'){ viewer.scrollLeft=0; viewer.scrollTop=0; } } });
 pageNumInput.addEventListener('change', async () => {
-  if (!pdfDoc) return;
-  let p = parseInt(pageNumInput.value, 10);
-  if (isNaN(p)) return;
-  currentPage = Math.max(1, Math.min(p, pdfDoc.numPages));
-  await renderPage();
-  if (fitMode === 'window') {
-    viewer.scrollLeft = 0;
-    viewer.scrollTop = 0;
-  }
+  if (!pdfDoc) return; let p=parseInt(pageNumInput.value,10); if (isNaN(p)) return;
+  currentPage = Math.max(1, Math.min(p, pdfDoc.numPages)); await renderPage(); if (fitMode==='window'){ viewer.scrollLeft=0; viewer.scrollTop=0; }
 });
 
-// Pan a ostatné ovládania ...
+// Lupa
+function setMagnify(on) { magnifyOn=on; magnifyToggleBtn.textContent='Lupa: '+(on?'ON':'OFF'); if (on){ setHandMode(false); setAddMarkerMode(false); } }
+magnifyToggleBtn.addEventListener('click', () => setMagnify(!magnifyOn));
 
-// **HLAVNÁ ZMENA: pri načítaní obnovujeme uložené PDF a zápisník**
+// Pridanie čísla
+function setAddMarkerMode(on) {
+  addMarkerOn=on; addMarkerToggleBtn.textContent='Pridať číslo: '+(on?'ON':'OFF');
+  viewer.classList.toggle('crosshair', on);
+  statusEl.textContent = on ? 'Kliknite do PDF pre umiestnenie čísla.' : '';
+}
+addMarkerToggleBtn.addEventListener('click', () => setAddMarkerMode(!addMarkerOn));
+
+// Klik na canvas (zoom/marker)
+canvas.addEventListener('mousedown', async (e) => {
+  if (!pdfDoc) return;
+  if (addMarkerOn) { placeMarkerAtEvent(e); return; }
+  if (!magnifyOn) return;
+  if (e.button===2) e.preventDefault();
+  const factor = (e.button===0) ? ZOOM_STEP : (e.button===2) ? (1/ZOOM_STEP) : 1; if (factor===1) return;
+  fitMode=null;
+  const rect = canvas.getBoundingClientRect(); const oldW=canvas.width, oldH=canvas.height;
+  const clickXPage=(e.clientX-rect.left)/oldW; const clickYPage=(e.clientY-rect.top)/oldH;
+  scale=clampScale(scale*factor); await renderPage();
+  const newW=canvas.width, newH=canvas.height; const vr=viewer.getBoundingClientRect(); const vx=e.clientX-vr.left, vy=e.clientY-vr.top;
+  viewer.scrollLeft = Math.max(0, Math.min(clickXPage*newW - vx, Math.max(0, viewer.scrollWidth - viewer.clientWidth)));
+  viewer.scrollTop = Math.max(0, Math.min(clickYPage*newH - vy, Math.max(0, viewer.scrollHeight - viewer.clientHeight)));
+});
+canvas.addEventListener('contextmenu', (e) => { if (magnifyOn || addMarkerOn) e.preventDefault(); });
+
+// Pan (ručička)
+let dragStart=null;
+function setHandMode(on) { isHand=on; toggleHandBtn.textContent='Pan (ručička): '+(on?'ON':'OFF'); viewer.classList.toggle('hand', on); viewer.classList.toggle('dragging', false); if (on){ setMagnify(false); setAddMarkerMode(false); } }
+toggleHandBtn.addEventListener('click', () => setHandMode(!isHand));
+viewer.addEventListener('pointerdown', (e) => {
+  if (!isHand) return; viewer.setPointerCapture(e.pointerId);
+  dragStart={ x:e.clientX, y:e.clientY, sl:viewer.scrollLeft, st:viewer.scrollTop }; viewer.classList.add('dragging');
+});
+viewer.addEventListener('pointermove', (e) => { if (!isHand || !dragStart) return; const dx=e.clientX-dragStart.x, dy=e.clientY-dragStart.y; viewer.scrollLeft=dragStart.sl-dx; viewer.scrollTop=dragStart.st-dy; });
+viewer.addEventListener('pointerup', (e) => { if (!isHand) return; dragStart=null; viewer.classList.remove('dragging'); viewer.releasePointerCapture?.(e.pointerId); });
+
+// Vycentrovať
+centerBtn.addEventListener('click', async () => { if (!pdfDoc) return; fitMode='window'; await renderPage(); viewer.scrollLeft=0; viewer.scrollTop=0; statusEl.textContent='Zobrazené celé (vycentrované).'; });
+
+// Export/Import
+const DATA_VERSION=1;
+function exportData() {
+  sortRowsInPlace();
+  const payload={ version:DATA_VERSION, rows, markers };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='zapisnik-export.json'; a.click(); URL.revokeObjectURL(url);
+  statusEl.textContent='Export hotový.';
+}
+async function importData(file) {
+  try {
+    const text=await file.text(); const data=JSON.parse(text);
+    if (!data || !Array.isArray(data.rows) || !Array.isArray(data.markers)) { alert('Neplatný formát importu.'); return; }
+    if (!confirm('Import nahradí existujúce riadky a markery. Pokračovať?')) return;
+    rows = data.rows.map(r=>({...r})); sortRowsInPlace(); saveRows();
+    markers = data.markers.map(m=>({ number:parseInt(m.number,10), page:parseInt(m.page,10), xNorm:Number(m.xNorm), yNorm:Number(m.yNorm) }))
+      .filter(m=>!isNaN(m.number)&&!isNaN(m.page)&&isFinite(m.xNorm)&&isFinite(m.yNorm));
+    saveMarkers(); renderRows(); renderMarkers();
+    statusEl.textContent='Import hotový. (Uistite sa, že pracujete s rovnakým PDF.)';
+  } catch (err) { alert('Import zlyhal: '+err.message); }
+  finally { importDataInput.value=''; }
+}
+exportBtn.addEventListener('click', exportData);
+importBtn.addEventListener('click', () => importDataInput.click());
+importDataInput.addEventListener('change', async (e) => { const file=e.target.files?.[0]; if (file) await importData(file); });
+
+// Panel – presná šírka + rúčka
+function updatePanelWidthVar() { const w=sidePanel.getBoundingClientRect().width; document.body.style.setProperty('--side-open-w', w+'px'); }
+function updatePanelHandleIcon() { panelHandleBtn.textContent = panelOpen ? '›' : '‹'; panelHandleBtn.setAttribute('aria-expanded', String(panelOpen)); }
+function setPanelOpen(on) {
+  panelOpen=on; sidePanel.classList.toggle('open', on); document.body.classList.toggle('panel-open', on); updatePanelHandleIcon();
+  if (on) { requestAnimationFrame(updatePanelWidthVar); window.addEventListener('resize', updatePanelWidthVar); }
+  else { window.removeEventListener('resize', updatePanelWidthVar); document.body.style.removeProperty('--side-open-w'); }
+  if (pdfDoc && fitMode==='window') { renderPage(); viewer.scrollLeft=0; viewer.scrollTop=0; }
+}
+panelHandleBtn.addEventListener('click', () => setPanelOpen(!panelOpen));
+
+// DOH kalkulačka
+const dohOpenBtn=document.getElementById('dohOpen');
+const dohOverlay=document.getElementById('dohOverlay');
+const dohCloseBtn=document.getElementById('dohClose');
+const dohInventoryInput=document.getElementById('dohInventory');
+const dohPerfPeriodInput=document.getElementById('dohPerfPeriod');
+const dohWdaysPerWeekInput=document.getElementById('dohWdaysPerWeek');
+const dohCalcBtn=document.getElementById('dohCalc');
+const dohClearBtn=document.getElementById('dohClear');
+const dohResultEl=document.getElementById('dohResult');
+const dohErrorEl=document.getElementById('dohError');
+const dohNoteEl=document.getElementById('dohNote');
+const DOH_PREFS_KEY='dohCalcPrefs';
+function getSelectedDays(){ const r=document.querySelector('input[name="dohDays"]:checked'); return r?parseInt(r.value,10):30; }
+function getResultType(){ const r=document.querySelector('input[name="dohResultType"]:checked'); return r?r.value:'work'; }
+function openDoh(){ loadDohPrefs(); dohOverlay.hidden=false; setTimeout(()=>dohInventoryInput.focus(),0); }
+function closeDoh(){ dohOverlay.hidden=true; }
+function loadDohPrefs() {
+  try {
+    const raw=localStorage.getItem(DOH_PREFS_KEY); if (!raw) return; const p=JSON.parse(raw);
+    document.querySelector(`input[name="dohDays"][value="${p.days===360?360:30}"]`).checked=true;
+    const rt=document.querySelector(`input[name="dohResultType"][value="${p.resultType||'work'}"]`); rt && (rt.checked=true);
+    if (typeof p.wdaysPerWeek==='number') dohWdaysPerWeekInput.value=p.wdaysPerWeek;
+    if (typeof p.inventory==='number') dohInventoryInput.value=p.inventory;
+    if (typeof p.perfPeriod==='number') dohPerfPeriodInput.value=p.perfPeriod;
+  } catch {}
+}
+function saveDohPrefs(){
+  const payload={ days:getSelectedDays(), resultType:getResultType(), wdaysPerWeek:parseFloat(dohWdaysPerWeekInput.value), inventory:parseFloat(dohInventoryInput.value), perfPeriod:parseFloat(dohPerfPeriodInput.value) };
+  localStorage.setItem(DOH_PREFS_KEY, JSON.stringify(payload));
+}
+function fmtDays(val){ if(!isFinite(val)) return '∞'; return (Math.round(val*100)/100).toLocaleString('sk-SK')+' dňa'; }
+function showError(msg){ dohErrorEl.textContent=msg; dohErrorEl.hidden=false; }
+function clearError(){ dohErrorEl.hidden=true; dohErrorEl.textContent=''; }
+function clampNum(v,min,max){ return Math.max(min, Math.min(max,v)); }
+function computeDoh(){
+  clearError();
+  const inv=Number(dohInventoryInput.value), perfPeriod=Number(dohPerfPeriodInput.value), days=getSelectedDays(), resultType=getResultType();
+  const wdaysPerWeek=clampNum(Number(dohWdaysPerWeekInput.value)||5,1,7), wRatio=wdaysPerWeek/7;
+  if (!isFinite(inv)||inv<0){ showError('Zadaj platnú hodnotu skladu (nezáporné číslo).'); return; }
+  if (!isFinite(perfPeriod)||perfPeriod<=0){ showError('Zadaj platný výkon za obdobie (kladné číslo).'); return; }
+  const dohCal=(inv*days)/perfPeriod, dohWork=(inv*(days*wRatio))/perfPeriod, dohDays=(resultType==='work')?dohWork:dohCal;
+  dohResultEl.textContent='Výsledok: '+fmtDays(dohDays);
+  statusEl.textContent='DOH vypočítaný: '+dohDays.toFixed(2)+(resultType==='work'?' pracovného dňa':' kalendárneho dňa');
+  const dailyCogsCal=perfPeriod/days, dailyCogsWork=perfPeriod/(days*wRatio);
+  dohNoteEl.textContent='Odvodené denné COGS → kalendárne: '+Math.round(dailyCogsCal).toLocaleString('sk-SK')+' €/deň, pracovné: '+Math.round(dailyCogsWork).toLocaleString('sk-SK')+' €/prac. deň.';
+  saveDohPrefs();
+}
+dohOpenBtn.addEventListener('click', openDoh);
+dohCloseBtn.addEventListener('click', closeDoh);
+dohOverlay.addEventListener('click', (e)=>{ if(e.target===dohOverlay) closeDoh(); });
+dohCalcBtn.addEventListener('click', computeDoh);
+dohClearBtn.addEventListener('click', ()=>{ dohInventoryInput.value=''; dohPerfPeriodInput.value=''; dohResultEl.textContent='Výsledok: —'; dohNoteEl.textContent=''; clearError(); saveDohPrefs(); });
+document.querySelectorAll('input[name="dohDays"]').forEach(r=>r.addEventListener('change', saveDohPrefs));
+document.querySelectorAll('input[name="dohResultType"]').forEach(r=>r.addEventListener('change', saveDohPrefs));
+dohWdaysPerWeekInput.addEventListener('input', saveDohPrefs);
+[dohInventoryInput, dohPerfPeriodInput].forEach(inp=>inp.addEventListener('keydown',(e)=>{ if(e.key==='Enter') computeDoh(); }));
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape' && !dohOverlay.hidden) closeDoh(); });
+
+// Inicializácie
+loadRows(); renderRows(); loadMarkers(); renderMarkers(); if (rows.length===0) addEmptyRow();
+setPanelOpen(false); updatePanelHandleIcon();
+
+// Obnova PDF po načítaní (window.name -> sessionStorage -> localStorage -> IndexedDB)
 window.addEventListener('load', async () => {
-  // Obnov PDF zo storage (window.name, sessionStorage, localStorage, IndexedDB)
-  const rec = await loadLastPdfRecord();
-  if (rec && rec.arrayBuffer) {
-    await loadPdf(rec.arrayBuffer, rec.name || 'PDF');
-    const st = loadPdfState();
-    if (st && pdfDoc) {
-      if (Number.isInteger(st.page)) currentPage = Math.max(1, Math.min(st.page, pdfDoc.numPages));
-      if (typeof st.scale === 'number') {
-        scale = clampScale(st.scale);
-        fitMode = st.fitMode || null;
+  try {
+    statusEl.textContent = 'Obnovujem posledné PDF...';
+    const rec = await loadLastPdfRecord();
+    if (rec && rec.arrayBuffer) {
+      await loadPdf(rec.arrayBuffer, rec.name || 'PDF');
+      const st=loadPdfState();
+      if (st && pdfDoc) {
+        if (Number.isInteger(st.page)) currentPage = Math.max(1, Math.min(st.page, pdfDoc.numPages));
+        if (typeof st.scale==='number') { scale=clampScale(st.scale); fitMode=st.fitMode||null; }
+        await renderPage();
       }
-      await renderPage();
+      statusEl.textContent = 'Obnovené: ' + (rec.name || 'PDF') + ' • ' + pdfDoc.numPages + ' strán';
+    } else {
+      statusEl.textContent = 'Vyberte PDF súbor (tlačidlo hore vľavo).';
     }
-    statusEl.textContent = 'Obnovené posledné PDF: ' + (rec.name || 'PDF') + ' • ' + pdfDoc.numPages + ' strán';
-  } else {
+  } catch (e) {
+    console.warn('Obnova PDF po načítaní zlyhala:', e);
     statusEl.textContent = 'Vyberte PDF súbor (tlačidlo hore vľavo).';
   }
-
-  // Obnov zápisník zo storage
-  loadRows();
-  renderRows();
 });
+</script>
