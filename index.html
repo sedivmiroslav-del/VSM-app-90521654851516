@@ -451,7 +451,6 @@ async function idbDataToArrayBuffer(data) {
     if (data.buffer instanceof ArrayBuffer) {
       // TypedArray (napr. Uint8Array)
       const view = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.length || data.buffer.byteLength);
-      // Vytvoríme kópiu do presnej dĺžky
       const copy = new Uint8Array(view.byteLength);
       copy.set(view);
       return copy.buffer;
@@ -501,7 +500,7 @@ async function saveLastPdf(arrayBuffer, name) {
       const tx = db.transaction(PDF_STORE, 'readwrite');
       tx.oncomplete = () => { try { db.close(); } catch {} resolve(); };
       tx.onerror = () => { const err = tx.error || new Error('Tx error'); try { db.close(); } catch {} reject(err); };
-      const bytes = new Uint8Array(arrayBuffer); // uložíme bajty
+      const bytes = new Uint8Array(arrayBuffer); // uložíme bajty (tu musí byť buffer „attached“)
       tx.objectStore(PDF_STORE).put({ name, data: bytes, savedAt: Date.now() }, 'last');
     });
     result.idb = true;
@@ -720,21 +719,32 @@ async function focusMarkerByNumber(num) {
 }
 
 // ---- Viewer ----
+// Načítanie cez tlačidlo "Vybrať súbor"
+// DÔLEŽITÉ: najprv uložíme PDF (buffer je ešte „attached“), až potom ho načítame do PDF.js (ktoré buffer odpojí).
 fileInput.addEventListener('change', async (e) => {
   const file = e.target.files?.[0]; if (!file) return;
   try {
     const ab = await file.arrayBuffer();
-    await loadPdf(ab, file.name);
 
-    // Ulož a skontroluj, kam sa naozaj podarilo uložiť
+    // 1) Ulož (window.name, session, local, IDB)
     const flags = await saveLastPdf(ab, file.name);
-    const test = await loadLastPdfRecord(); // over, že sa vieme obnoviť
-    const savedTo = Object.entries(flags).filter(([k,v])=>v).map(([k])=>k).join(', ') || 'nič';
+
+    // 2) Over, že sa vieme obnoviť zo storage
+    const test = await loadLastPdfRecord();
+
+    // 3) Načítaj do vieweru – preferuj práve uložený záznam (IDB)
     if (test && test.arrayBuffer) {
-      statusEl.textContent = `PDF načítané. Uložené do: ${savedTo}.`;
+      await loadPdf(test.arrayBuffer, test.name || file.name);
     } else {
-      statusEl.textContent = `PDF načítané, ale nepodarilo sa ho spoľahlivo uložiť (uložené do: ${savedTo}). Skontroluj kvóty/privátny režim.`;
+      // fallback: stále máme pôvodný ab, ktorý môže PDF.js odpojiť – už ho nepotrebujeme inde
+      await loadPdf(ab, file.name);
     }
+
+    const savedTo = Object.entries(flags).filter(([k,v])=>v).map(([k])=>k).join(', ') || 'nič';
+    statusEl.textContent = test && test.arrayBuffer
+      ? `PDF načítané. Uložené do: ${savedTo}.`
+      : `PDF načítané, ale nepodarilo sa ho spoľahlivo uložiť (uložené do: ${savedTo}). Skontroluj kvóty/privátny režim.`;
+
   } catch (err) {
     console.warn('Načítanie/Uloženie PDF zlyhalo:', err);
     statusEl.textContent = 'PDF sa nepodarilo načítať/uložiť.';
